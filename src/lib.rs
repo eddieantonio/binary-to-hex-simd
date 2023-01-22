@@ -78,6 +78,8 @@ fn to_hex_digit(nibbles: u8x16) -> u8x16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::fs;
     use test::{black_box, Bencher};
 
     #[test]
@@ -90,13 +92,13 @@ mod tests {
 
     #[bench]
     fn benchmark_byte_by_byte(b: &mut Bencher) {
-        let input = b"\xcf\r\x1f\x7fM\xc0\x89j\xec\x18S\x07\x91\xd8\xab\xd2";
-        b.iter(|| black_box(byte_by_byte(input)));
+        let input = fs::read("./test.bin").unwrap();
+        b.iter(|| black_box(byte_by_byte(&input)));
     }
 
     #[bench]
     fn benchmark_simd_1(b: &mut Bencher) {
-        let input = b"\xcf\r\x1f\x7fM\xc0\x89j\xec\x18S\x07\x91\xd8\xab\xd2";
-        b.iter(|| black_box(simd_1(input)));
+        let input = fs::read("./test.bin").unwrap();
+        b.iter(|| black_box(simd_1(&input)));
     }
 }
