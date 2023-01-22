@@ -1,8 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
-#include <assert.h>
 
-void write_hex_slow(uint8_t *src, uint8_t *dest, size_t n) {
+static void write_hex_slow(uint8_t *src, uint8_t *dest, size_t n) {
     while (n > 0) {
         uint8_t c = *src++;
         uint8_t hi = c >> 4;
@@ -37,9 +36,6 @@ void to_hex_using_tbl(uint8_t *src, uint8_t *dest, size_t n) {
     src += n_initial_bytes;
     dest += 2 * n_initial_bytes;
 
-    /* Must be 16 byte aligned: */
-    assert((n % 16) == 0);
-
     __asm__(
             /* Load required constants: */
             "ldr        q6,[%3]\n"
@@ -73,15 +69,4 @@ void to_hex_using_tbl(uint8_t *src, uint8_t *dest, size_t n) {
                   "r" (n),
                   "p" (lookup)
             );
-}
-
-const char src[] = "This is a big string literal that is over 16 bytes long\n";
-#define BUFFER_LENGTH (2 * (sizeof(src) - 1))
-uint8_t buffer[BUFFER_LENGTH + 1] = {0};
-
-int main(void) {
-    buffer[BUFFER_LENGTH] = 0;
-    to_hex_using_tbl((uint8_t*) src, buffer, sizeof(src));
-    printf("<<%s>>\n", buffer);
-    return 0;
 }
