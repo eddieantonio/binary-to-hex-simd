@@ -34,6 +34,13 @@ void to_hex_using_tbl32(uint8_t *src, uint8_t *dest, size_t n) {
             "ldr        q7, [%3]\n"
             "movi.16b   v6, #15\n"
 
+            /* Offset destination by 32 bytes to facilitate these
+             * instructions:
+             *  stp  x,y, [reg, -#32]
+             *  stp  x,y [reg], #64
+             */
+            "add       %1, %1, #32\n"
+
             /* Load 32-bytes from the input and increment pointer: */
             "L1:\n"
             "ldp        q0, q1, [%0], #32\n"
@@ -51,7 +58,7 @@ void to_hex_using_tbl32(uint8_t *src, uint8_t *dest, size_t n) {
             "tbl.16b    v5, { v7 }, v5\n"
 
             /* Store 32 bytes of output */
-            "stp        q4, q5, [%1], #32\n"
+            "stp        q4, q5, [%1, #-32]\n"
 
             /* Rinse and repeat for upper half */
             "ushr.16b   v2, v1, #4\n"
@@ -60,7 +67,7 @@ void to_hex_using_tbl32(uint8_t *src, uint8_t *dest, size_t n) {
             "zip2.16b   v5, v2, v3\n"
             "tbl.16b    v4, { v7 }, v4\n"
             "tbl.16b    v5, { v7 }, v5\n"
-            "stp        q4, q5, [%1], #32\n"
+            "stp        q4, q5, [%1], #64\n"
 
             "subs       %2, %2, #32\n"
             "b.ne       L1\n"
