@@ -1,5 +1,18 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <assert.h>
+
+void write_hex_slow(uint8_t *src, uint8_t *dest, size_t n) {
+    while (n > 0) {
+        uint8_t c = *src++;
+        uint8_t hi = c >> 4;
+        uint8_t lo = c & 0xf;
+
+        *dest++ = hi < 10 ? hi + '0' : hi - 10 + 'A';
+        *dest++ = lo < 10 ? lo + '0' : lo - 10 + 'A';
+        n--;
+    }
+}
 
 /**
  * Converts the binary in src to an ASCII hexadecimal representation in src to
@@ -11,13 +24,30 @@
 void to_hex_using_tbl(uint8_t *src, uint8_t *dest, size_t n) {
     static char lookup[] = "0123456789ABCDEF";
 
+    /* Start by writing bytes that don't fit in exactly 16-byte units: */
+    size_t n_initial_bytes = n % 16;
+    write_hex_slow(src, dest, n_initial_bytes);
+
+    n -= n_initial_bytes;
+    if (n == 0)
+        /* Nothing left to do: */
+        return;
+
+    /* Skip the bytes we already (slowly) wrote. */
+    src += n_initial_bytes;
+    dest += 2 * n_initial_bytes;
+
+    /* Must be 16 byte aligned: */
+    assert((n % 16) == 0);
+
     __asm__(
             /* Load required constants: */
-            "ldr        q6,[%0]\n"
+            "ldr        q6,[%3]\n"
             "movi.16b   v5, #15\n"
 
             /* Load 16-bytes from the input and increment pointer: */
-            "ldr        q0, [x0], #16\n"
+            "Loop:\n"
+            "ldr        q0, [%0], #16\n"
 
             /* Split into high and low nibbles: */
             "ushr.16b   v1, v0, #4\n"
@@ -31,35 +61,27 @@ void to_hex_using_tbl(uint8_t *src, uint8_t *dest, size_t n) {
             "tbl.16b    v3, { v6 }, v3\n"
             "tbl.16b    v4, { v6 }, v4\n"
 
-            /* Store: */
-            "stp        q3, q3, [x1], #32\n"
+            /* Store 32 bytes of output */
+            "stp        q3, q4, [%1], #32\n"
+
+            "subs       %2, %2, #16\n"
+            "b.ne       Loop\n"
 
                 : /* no outputs */
-                : "p" (lookup)
+                : "p" (src),
+                  "p" (dest),
+                  "r" (n),
+                  "p" (lookup)
             );
 }
 
-
+const char src[] = "This is a big string literal that is over 16 bytes long\n";
+#define BUFFER_LENGTH (2 * (sizeof(src) - 1))
+uint8_t buffer[BUFFER_LENGTH + 1] = {0};
 
 int main(void) {
-    char src[] = "Hello!\n";
-    uint8_t buffer[33] = {0};
-
+    buffer[BUFFER_LENGTH] = 0;
     to_hex_using_tbl((uint8_t*) src, buffer, sizeof(src));
-    buffer[2 * (sizeof(src) - 1) + 1] = 0;
     printf("<<%s>>\n", buffer);
     return 0;
-}
-
-
-void write_hex_slow(uint8_t *src, uint8_t *dest, size_t n) {
-    while (n > 0) {
-        uint8_t c = *src++;
-        uint8_t hi = c >> 4;
-        uint8_t lo = c & 0xf;
-
-        *dest++ = hi < 10 ? hi + '0' : hi - 10 + 'A';
-        *dest++ = lo < 10 ? lo + '0' : lo - 10 + 'A';
-        n--;
-    }
 }
