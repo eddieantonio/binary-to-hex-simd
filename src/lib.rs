@@ -5,6 +5,25 @@ extern crate test;
 
 use std::simd::{u8x16, SimdPartialOrd};
 
+mod simd_tbl {
+    #[link(name = "simdtbl")]
+    extern "C" {
+        pub fn to_hex_using_tbl(source: *const u8, destination: *mut u8, n: usize);
+    }
+}
+
+pub fn to_hex_using_tbl(input: &[u8]) -> String {
+    let output_size = input.len() * 2;
+    let mut buffer = Vec::<u8>::with_capacity(output_size);
+    let buffer_ptr = buffer.as_mut_ptr();
+
+    unsafe {
+        simd_tbl::to_hex_using_tbl(input.as_ptr(), buffer_ptr, input.len());
+        buffer.set_len(output_size);
+        String::from_utf8_unchecked(buffer)
+    }
+}
+
 pub fn byte_by_byte(input: &[u8]) -> String {
     unsafe { String::from_utf8_unchecked(_byte_by_byte(input)) }
 }
@@ -92,10 +111,14 @@ mod tests {
 
     #[test]
     fn basic_case() {
-        let input = b"\xcf\r\x1f\x7fM\xc0\x89j\xec\x18S\x07\x91\xd8\xab\xd2";
-        let answer = "CF0D1F7F4DC0896AEC18530791D8ABD2";
+        let input = b"This is a big string literal that is over 16 bytes long\n\x00";
+        let answer = "54686973206973206120626967207374\
+                      72696E67206C69746572616C20746861\
+                      74206973206F76657220313620627974\
+                      6573206C6F6E670A00";
         assert_eq!(&answer, &byte_by_byte(&input[..]));
         assert_eq!(&answer, &simd_1(&input[..]));
+        assert_eq!(&answer, &to_hex_using_tbl(&input[..]));
     }
 
     #[bench]
@@ -108,5 +131,11 @@ mod tests {
     fn benchmark_simd_1(b: &mut Bencher) {
         let input = fs::read("./test.bin").unwrap();
         b.iter(|| black_box(simd_1(&input)));
+    }
+
+    #[bench]
+    fn benchmark_simd_using_tbl(b: &mut Bencher) {
+        let input = fs::read("./test.bin").unwrap();
+        b.iter(|| black_box(to_hex_using_tbl(&input)));
     }
 }
