@@ -6,38 +6,6 @@ extern crate test;
 use std::arch::asm;
 use std::simd::{u8x16, SimdPartialOrd};
 
-mod simd_tbl {
-    #[link(name = "simdtbl")]
-    extern "C" {
-        pub fn to_hex_using_tbl(source: *const u8, destination: *mut u8, n: usize);
-        pub fn to_hex_using_tbl32(source: *const u8, destination: *mut u8, n: usize);
-    }
-}
-
-pub fn to_hex_using_tbl(input: &[u8]) -> String {
-    let output_size = input.len() * 2;
-    let mut buffer = Vec::<u8>::with_capacity(output_size);
-    let buffer_ptr = buffer.as_mut_ptr();
-
-    unsafe {
-        simd_tbl::to_hex_using_tbl(input.as_ptr(), buffer_ptr, input.len());
-        buffer.set_len(output_size);
-        String::from_utf8_unchecked(buffer)
-    }
-}
-
-pub fn to_hex_using_tbl32(input: &[u8]) -> String {
-    let output_size = input.len() * 2;
-    let mut buffer = Vec::<u8>::with_capacity(output_size);
-    let buffer_ptr = buffer.as_mut_ptr();
-
-    unsafe {
-        simd_tbl::to_hex_using_tbl32(input.as_ptr(), buffer_ptr, input.len());
-        buffer.set_len(output_size);
-        String::from_utf8_unchecked(buffer)
-    }
-}
-
 pub fn byte_by_byte(input: &[u8]) -> String {
     unsafe { String::from_utf8_unchecked(_byte_by_byte(input)) }
 }
@@ -210,8 +178,6 @@ mod tests {
                       6573206C6F6E670A00";
         assert_eq!(&answer, &byte_by_byte(&input[..]));
         assert_eq!(&answer, &simd_1(&input[..]));
-        assert_eq!(&answer, &to_hex_using_tbl(&input[..]));
-        assert_eq!(&answer, &to_hex_using_tbl32(&input[..]));
         assert_eq!(&answer, &simd_2(&input[..]));
     }
 
@@ -228,19 +194,7 @@ mod tests {
     }
 
     #[bench]
-    fn benchmark_simd_using_tbl(b: &mut Bencher) {
-        let input = fs::read("./test.bin").unwrap();
-        b.iter(|| black_box(to_hex_using_tbl(&input)));
-    }
-
-    #[bench]
-    fn benchmark_simd_using_tbl32(b: &mut Bencher) {
-        let input = fs::read("./test.bin").unwrap();
-        b.iter(|| black_box(to_hex_using_tbl32(&input)));
-    }
-
-    #[bench]
-    fn benchmark_simd_using_tbl32_rust(b: &mut Bencher) {
+    fn benchmark_simd_2(b: &mut Bencher) {
         let input = fs::read("./test.bin").unwrap();
         b.iter(|| black_box(simd_2(&input)));
     }
