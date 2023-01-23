@@ -117,14 +117,15 @@ fn to_hex_digit(nibbles: u8x16) -> u8x16 {
 }
 
 pub fn simd_2(input: &[u8]) -> String {
-    const LOOKUP: [u8; 16] = *b"0123456789ABCDEF";
     // How many bytes to process in one loop iteration:
-    const MOUTHFUL: usize = 32;
+    const MOUTHFUL: usize = 16;
+    // ASCII lookup table used by tbl.16b:
+    const LOOKUP: [u8; 16] = *b"0123456789ABCDEF";
 
     let output_size = input.len() * 2;
     let mut buffer = Vec::<u8>::with_capacity(output_size);
 
-    // do the first (up to) 31 bytes byte-by-byte:
+    // Do the first (up to) 31 bytes byte-by-byte:
     let n_initial_bytes = input.len() % MOUTHFUL;
     let to_hex_digit = |nibble| {
         if nibble >= 10 {
@@ -158,40 +159,27 @@ pub fn simd_2(input: &[u8]) -> String {
             "ldr        q7, [{3}]",
             "movi.16b   v6, #15",
 
-            // Offset destination by 32 bytes to facilitate these
-            // instructions:
-            //     stp  x,y, [reg, -#32]
-            //     stp  x,y, [reg], #64
-            // (register is only incremented once)
-            "add       {1}, {1}, #32",
-
-            // Load 32-bytes from the input and increment pointer:
+            // Load 16 bytes from the input and increment pointer:
             "2:",
-            "ldp        q0, q1, [{0}], #32",
+            "ldp        q0, q1, [{0}], #16",
 
             // Split into high and low nibbles:
             "ushr.16b   v2, v0, #4",
             "and.16b    v3, v0, v6",
-            "ushr.16b   v16, v1, #4",
-            "and.16b    v17, v1, v6",
 
             // Interleave:
             "zip1.16b   v4, v2, v3",
             "zip2.16b   v5, v2, v3",
-            "zip1.16b   v18, v16, v17",
-            "zip2.16b   v19, v16, v17",
 
             // Lookup ASCII:
             "tbl.16b    v4, {{ v7 }}, v4",
             "tbl.16b    v5, {{ v7 }}, v5",
-            "tbl.16b    v18, {{ v7 }}, v18",
-            "tbl.16b    v19, {{ v7 }}, v19",
 
-            // Store 64 bytes of output
-            "stp        q4, q5, [{1}, #-32]",
-            "stp        q18, q19, [{1}], #64",
+            // Store 32 bytes of output
+            "stp        q4, q5, [{1}], #32",
 
-            "subs       {2}, {2}, #32",
+            // Loop.
+            "subs       {2}, {2}, #16",
             "b.ne       2b",
 
             in(reg) remaining_input.as_ptr(),
