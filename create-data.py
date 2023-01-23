@@ -2,7 +2,7 @@ from random import randrange
 
 MEGABYTES = 1024 * 1024
 GIGABYTES = 1024 * MEGABYTES
-size = 4 * GIGABYTES
+size = 12 * MEGABYTES
 
 window_size = 4 * 1024
 

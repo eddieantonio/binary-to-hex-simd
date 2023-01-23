@@ -3,6 +3,7 @@
 
 extern crate test;
 
+use std::arch::asm;
 use std::simd::{u8x16, SimdPartialOrd};
 
 mod simd_tbl {
@@ -115,6 +116,98 @@ fn to_hex_digit(nibbles: u8x16) -> u8x16 {
     base + nibbles
 }
 
+pub fn simd_2(input: &[u8]) -> String {
+    const LOOKUP: [u8; 16] = *b"0123456789ABCDEF";
+    // How many bytes to process in one loop iteration:
+    const MOUTHFUL: usize = 32;
+
+    let output_size = input.len() * 2;
+    let mut buffer = Vec::<u8>::with_capacity(output_size);
+
+    // do the first (up to) 31 bytes byte-by-byte:
+    let n_initial_bytes = input.len() % MOUTHFUL;
+    let to_hex_digit = |nibble| {
+        if nibble >= 10 {
+            b'A' + nibble - 10
+        } else {
+            b'0' + nibble
+        }
+    };
+
+    for byte in input[..n_initial_bytes].iter().copied() {
+        let high_nibble = byte >> 4;
+        let low_nibble = byte & 0xF;
+
+        buffer.push(to_hex_digit(high_nibble));
+        buffer.push(to_hex_digit(low_nibble));
+    }
+
+    let buffer_ptr = buffer[n_initial_bytes * 2..].as_mut_ptr();
+    let remaining_input = &input[n_initial_bytes..];
+
+    assert_eq!(
+        0,
+        remaining_input.len() % MOUTHFUL,
+        "data size must be multiple of {MOUTHFUL} bytes"
+    );
+
+    // Uh oh!
+    unsafe {
+        asm!(
+            // Load required constants:
+            "ldr        q7, [{3}]",
+            "movi.16b   v6, #15",
+
+            // Offset destination by 32 bytes to facilitate these
+            // instructions:
+            //     stp  x,y, [reg, -#32]
+            //     stp  x,y, [reg], #64
+            // (register is only incremented once)
+            "add       {1}, {1}, #32",
+
+            // Load 32-bytes from the input and increment pointer:
+            "2:",
+            "ldp        q0, q1, [{0}], #32",
+
+            // Split into high and low nibbles:
+            "ushr.16b   v2, v0, #4",
+            "and.16b    v3, v0, v6",
+
+            // Interleave:
+            "zip1.16b   v4, v2, v3",
+            "zip2.16b   v5, v2, v3",
+
+            // Lookup ASCII:
+            "tbl.16b    v4, {{ v7 }}, v4",
+            "tbl.16b    v5, {{ v7 }}, v5",
+
+            // Store 32 bytes of output
+            "stp        q4, q5, [{1}, #-32]",
+
+            // Rinse and repeat for upper half
+            "ushr.16b   v2, v1, #4",
+            "and.16b    v3, v1, v6",
+            "zip1.16b   v4, v2, v3",
+            "zip2.16b   v5, v2, v3",
+            "tbl.16b    v4, {{ v7 }}, v4",
+            "tbl.16b    v5, {{ v7 }}, v5",
+            "stp        q4, q5, [{1}], #64",
+
+            "subs       {2}, {2}, #32",
+            "b.ne       2b",
+
+            in(reg) remaining_input.as_ptr(),
+            in(reg) buffer_ptr,
+            in(reg) remaining_input.len(),
+            in(reg) &LOOKUP,
+            clobber_abi("C"),
+        );
+
+        buffer.set_len(output_size);
+        String::from_utf8_unchecked(buffer)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,6 +226,7 @@ mod tests {
         assert_eq!(&answer, &simd_1(&input[..]));
         assert_eq!(&answer, &to_hex_using_tbl(&input[..]));
         assert_eq!(&answer, &to_hex_using_tbl32(&input[..]));
+        assert_eq!(&answer, &simd_2(&input[..]));
     }
 
     #[bench]
@@ -157,5 +251,11 @@ mod tests {
     fn benchmark_simd_using_tbl32(b: &mut Bencher) {
         let input = fs::read("./test.bin").unwrap();
         b.iter(|| black_box(to_hex_using_tbl32(&input)));
+    }
+
+    #[bench]
+    fn benchmark_simd_using_tbl32_rust(b: &mut Bencher) {
+        let input = fs::read("./test.bin").unwrap();
+        b.iter(|| black_box(simd_2(&input)));
     }
 }
