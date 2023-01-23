@@ -140,6 +140,7 @@ pub fn simd_2(input: &[u8]) -> String {
             in(reg) remaining_input.len(),
             in(reg) &LOOKUP,
             clobber_abi("C"),
+            options(nostack),
         );
 
         buffer.set_len(output_size);
