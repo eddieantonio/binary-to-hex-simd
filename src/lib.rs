@@ -93,23 +93,8 @@ pub fn simd_2(input: &[u8]) -> String {
     let output_size = input.len() * 2;
     let mut buffer = Vec::<u8>::with_capacity(output_size);
 
-    // Do the first (up to) 31 bytes byte-by-byte:
-    let n_initial_bytes = input.len() % MOUTHFUL;
-    let to_hex_digit = |nibble| {
-        if nibble >= 10 {
-            b'A' + nibble - 10
-        } else {
-            b'0' + nibble
-        }
-    };
-
-    for byte in input[..n_initial_bytes].iter().copied() {
-        let high_nibble = byte >> 4;
-        let low_nibble = byte & 0xF;
-
-        buffer.push(to_hex_digit(high_nibble));
-        buffer.push(to_hex_digit(low_nibble));
-    }
+    // Convert the first (up to) 15 bytes byte-by-byte:
+    let n_initial_bytes = convert_initial_prefix_byte_by_byte::<MOUTHFUL>(input, &mut buffer);
 
     let buffer_ptr = buffer[n_initial_bytes * 2..].as_mut_ptr();
     let remaining_input = &input[n_initial_bytes..];
@@ -160,6 +145,43 @@ pub fn simd_2(input: &[u8]) -> String {
         buffer.set_len(output_size);
         String::from_utf8_unchecked(buffer)
     }
+}
+
+/// Converts `0..N` bytes of input from binary to its ASCII hexadecimal representation.
+///
+/// It's intended to be called by one of the SIMD implementations to convert the first few bytes
+/// until the input is a multiple that the the implementation can deal with it.
+///
+/// Returns the number of bytes of input consumed.
+///
+/// ## Post-conditions:
+///
+/// There will be a multiple of N bytes left in the buffer to convert or in math:
+/// `(input.len() - n_initial_bytes) % N == 0`
+#[inline]
+fn convert_initial_prefix_byte_by_byte<const N: usize>(
+    input: &[u8],
+    buffer: &mut Vec<u8>,
+) -> usize {
+    let n_initial_bytes = input.len() % N;
+
+    let to_hex_digit = |nibble| {
+        if nibble >= 10 {
+            b'A' + nibble - 10
+        } else {
+            b'0' + nibble
+        }
+    };
+
+    for byte in input[..n_initial_bytes].iter().copied() {
+        let high_nibble = byte >> 4;
+        let low_nibble = byte & 0xF;
+
+        buffer.push(to_hex_digit(high_nibble));
+        buffer.push(to_hex_digit(low_nibble));
+    }
+
+    n_initial_bytes
 }
 
 #[cfg(test)]
