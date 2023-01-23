@@ -172,26 +172,24 @@ pub fn simd_2(input: &[u8]) -> String {
             // Split into high and low nibbles:
             "ushr.16b   v2, v0, #4",
             "and.16b    v3, v0, v6",
+            "ushr.16b   v16, v1, #4",
+            "and.16b    v17, v1, v6",
 
             // Interleave:
             "zip1.16b   v4, v2, v3",
             "zip2.16b   v5, v2, v3",
+            "zip1.16b   v18, v16, v17",
+            "zip2.16b   v19, v16, v17",
 
             // Lookup ASCII:
             "tbl.16b    v4, {{ v7 }}, v4",
             "tbl.16b    v5, {{ v7 }}, v5",
+            "tbl.16b    v18, {{ v7 }}, v18",
+            "tbl.16b    v19, {{ v7 }}, v19",
 
-            // Store 32 bytes of output
+            // Store 64 bytes of output
             "stp        q4, q5, [{1}, #-32]",
-
-            // Rinse and repeat for upper half
-            "ushr.16b   v2, v1, #4",
-            "and.16b    v3, v1, v6",
-            "zip1.16b   v4, v2, v3",
-            "zip2.16b   v5, v2, v3",
-            "tbl.16b    v4, {{ v7 }}, v4",
-            "tbl.16b    v5, {{ v7 }}, v5",
-            "stp        q4, q5, [{1}], #64",
+            "stp        q18, q19, [{1}], #64",
 
             "subs       {2}, {2}, #32",
             "b.ne       2b",
