@@ -147,6 +147,71 @@ pub fn simd_2(input: &[u8]) -> String {
     }
 }
 
+pub fn simd_2a(input: &[u8]) -> String {
+    // How many bytes to process in one loop iteration:
+    const MOUTHFUL: usize = 16;
+    // ASCII lookup table used by tbl.16b:
+    const LOOKUP: [u8; 16] = *b"0123456789ABCDEF";
+
+    let output_size = input.len() * 2;
+    let mut buffer = Vec::<u8>::with_capacity(output_size);
+
+    // Convert the first (up to) 15 bytes byte-by-byte:
+    let n_initial_bytes = convert_initial_prefix_byte_by_byte::<MOUTHFUL>(input, &mut buffer);
+
+    let buffer_ptr = buffer[n_initial_bytes * 2..].as_mut_ptr();
+    let remaining_input = &input[n_initial_bytes..];
+
+    assert_eq!(
+        0,
+        remaining_input.len() % MOUTHFUL,
+        "data size must be multiple of {MOUTHFUL} bytes"
+    );
+
+    // Uh oh!
+    unsafe {
+        asm!(
+            // Load required constants:
+            "ldr        q7, [{3}]",
+            "movi.16b   v6, #15",
+
+            // Load 16 bytes from the input and increment pointer:
+            "2:",
+            "ldp        q0, q1, [{0}], #16",
+
+            // Split into high and low nibbles:
+            "ushr.16b   v2, v0, #4",
+            "and.16b    v3, v0, v6",
+
+            // Lookup ASCII:
+            "tbl.16b    v4, {{ v7 }}, v2",
+            "tbl.16b    v5, {{ v7 }}, v3",
+
+            // Store the first 16 bytes of output
+            "st2.8b     {{ v4, v5 }}, [{1}], #16",
+
+            // Get the latter 16 bytes of output and store them:
+            // (copy the upper 8 bytes of hi and low into v2 and v3, respectively):
+            "ext.16b    v2, v4, v4, #8",
+            "ext.16b    v3, v5, v5, #8",
+            "st2.8b     {{ v2, v3 }}, [{1}], #16",
+
+            // Loop.
+            "subs       {2}, {2}, #16",
+            "b.ne       2b",
+
+            in(reg) remaining_input.as_ptr(),
+            in(reg) buffer_ptr,
+            in(reg) remaining_input.len(),
+            in(reg) &LOOKUP,
+            clobber_abi("C"),
+        );
+
+        buffer.set_len(output_size);
+        String::from_utf8_unchecked(buffer)
+    }
+}
+
 /// Converts `0..N` bytes of input from binary to its ASCII hexadecimal representation.
 ///
 /// It's intended to be called by one of the SIMD implementations to convert the first few bytes
@@ -201,6 +266,7 @@ mod tests {
         assert_eq!(&answer, &byte_by_byte(&input[..]));
         assert_eq!(&answer, &simd_1(&input[..]));
         assert_eq!(&answer, &simd_2(&input[..]));
+        assert_eq!(&answer, &simd_2a(&input[..]));
     }
 
     #[bench]
@@ -219,5 +285,11 @@ mod tests {
     fn benchmark_simd_2(b: &mut Bencher) {
         let input = fs::read("./test.bin").unwrap();
         b.iter(|| black_box(simd_2(&input)));
+    }
+
+    #[bench]
+    fn benchmark_simd_2a(b: &mut Bencher) {
+        let input = fs::read("./test.bin").unwrap();
+        b.iter(|| black_box(simd_2a(&input)));
     }
 }
