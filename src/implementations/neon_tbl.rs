@@ -5,65 +5,78 @@ use std::arch::asm;
 pub fn to_ascii_hex(input: &[u8]) -> String {
     // How many bytes to process in one loop iteration:
     const MOUTHFUL: usize = 16;
-    // ASCII lookup table used by tbl.16b:
-    const LOOKUP: [u8; 16] = *b"0123456789ABCDEF";
 
     let output_size = input.len() * 2;
     let mut buffer = Vec::<u8>::with_capacity(output_size);
 
-    // Convert the first (up to) 15 bytes byte-by-byte:
+    // Convert the first (up to) 15 bytes, byte-by-byte:
     let n_initial_bytes = convert_initial_prefix_byte_by_byte::<MOUTHFUL>(input, &mut buffer);
 
-    let buffer_ptr = buffer[n_initial_bytes * 2..].as_mut_ptr();
+    // Prepare the pointers for usage with _convert_fast():
+    let bytes_written = n_initial_bytes * 2;
     let remaining_input = &input[n_initial_bytes..];
+    let buffer_ptr = buffer[bytes_written..].as_mut_ptr();
 
-    assert_eq!(
-        0,
-        remaining_input.len() % MOUTHFUL,
-        "data size must be multiple of {MOUTHFUL} bytes"
-    );
-
-    // Uh oh!
     unsafe {
-        asm!(
-            // Load required constants:
-            "ldr        q7, [{3}]",
-            "movi.16b   v6, #15",
-
-            // Load 16 bytes from the input and increment pointer:
-            "2:",
-            "ldp        q0, q1, [{0}], #16",
-
-            // Split into high and low nibbles:
-            "ushr.16b   v2, v0, #4",
-            "and.16b    v3, v0, v6",
-
-            // Interleave:
-            "zip1.16b   v4, v2, v3",
-            "zip2.16b   v5, v2, v3",
-
-            // Lookup ASCII:
-            "tbl.16b    v4, {{ v7 }}, v4",
-            "tbl.16b    v5, {{ v7 }}, v5",
-
-            // Store 32 bytes of output
-            "stp        q4, q5, [{1}], #32",
-
-            // Loop.
-            "subs       {2}, {2}, #16",
-            "b.ne       2b",
-
-            in(reg) remaining_input.as_ptr(),
-            in(reg) buffer_ptr,
-            in(reg) remaining_input.len(),
-            in(reg) &LOOKUP,
-            clobber_abi("C"),
-            options(nostack),
-        );
-
+        _convert_fast(remaining_input, buffer_ptr);
         buffer.set_len(output_size);
         String::from_utf8_unchecked(buffer)
     }
+}
+
+#[inline]
+unsafe fn _convert_fast(remaining_input: &[u8], buffer: *mut u8) {
+    // ASCII lookup table used by tbl.16b:
+    const LOOKUP: [u8; 16] = *b"0123456789ABCDEF";
+
+    if remaining_input.is_empty() {
+        // The assembly below assumes there is at least one loop iteration to do, or else it will
+        // crash.
+        return;
+    }
+
+    assert_eq!(
+        0,
+        remaining_input.len() % 16,
+        "data size must be multiple of 16 bytes"
+    );
+
+    // Uh oh!
+    asm!(
+        // Load required constants:
+        "ldr        q7, [{3}]",
+        "movi.16b   v6, #15",
+
+        // Load 16 bytes from the input and increment pointer:
+        "2:",
+        "ldp        q0, q1, [{0}], #16",
+
+        // Split into high and low nibbles:
+        "ushr.16b   v2, v0, #4",
+        "and.16b    v3, v0, v6",
+
+        // Interleave:
+        "zip1.16b   v4, v2, v3",
+        "zip2.16b   v5, v2, v3",
+
+        // Lookup ASCII:
+        "tbl.16b    v4, {{ v7 }}, v4",
+        "tbl.16b    v5, {{ v7 }}, v5",
+
+        // Store 32 bytes of output
+        "stp        q4, q5, [{1}], #32",
+
+        // Loop.
+        "subs       {2}, {2}, #16",
+        "b.ne       2b",
+
+        in(reg) remaining_input.as_ptr(),
+        in(reg) buffer,
+        in(reg) remaining_input.len(),
+        in(reg) &LOOKUP,
+        clobber_abi("C"),
+        options(nostack),
+    );
 }
 
 /// Converts `0..N` bytes of input from binary to its ASCII hexadecimal representation.
