@@ -7,11 +7,6 @@ pub mod implementations;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    use std::fs;
-    use test::{black_box, Bencher};
-
     #[test]
     fn basic_case() {
         use crate::implementations::*;
@@ -25,24 +20,23 @@ mod tests {
         assert_eq!(&answer, &neon_tbl::to_ascii_hex(&input[..]));
     }
 
-    #[bench]
-    fn benchmark_byte_by_byte(b: &mut Bencher) {
-        use crate::implementations::byte_by_byte::to_ascii_hex;
-        let input = fs::read("./test.bin").unwrap();
-        b.iter(|| black_box(to_ascii_hex(&input)));
-    }
+    mod benchmark {
+        use std::fs;
+        use test::{black_box, Bencher};
 
-    #[bench]
-    fn benchmark_simd_1(b: &mut Bencher) {
-        use crate::implementations::portable_simd::to_ascii_hex;
-        let input = fs::read("./test.bin").unwrap();
-        b.iter(|| black_box(to_ascii_hex(&input)));
-    }
+        macro_rules! benchmark {
+            ($name: ident) => {
+                #[bench]
+                fn $name(b: &mut Bencher) {
+                    use crate::implementations::$name::to_ascii_hex;
+                    let input = fs::read("./test.bin").unwrap();
+                    b.iter(|| black_box(to_ascii_hex(&input)));
+                }
+            };
+        }
 
-    #[bench]
-    fn benchmark_simd_2(b: &mut Bencher) {
-        use crate::implementations::neon_tbl::to_ascii_hex;
-        let input = fs::read("./test.bin").unwrap();
-        b.iter(|| black_box(to_ascii_hex(&input)));
+        benchmark!(byte_by_byte);
+        benchmark!(portable_simd);
+        benchmark!(neon_tbl);
     }
 }
