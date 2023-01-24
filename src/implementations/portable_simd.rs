@@ -1,4 +1,7 @@
-//! Using portable SIMD to operate on 16 bytes at once.
+//! Uses [std::simd] to operate on 16 bytes at once.
+//!
+//! As of this writing (2023-01-24) [std::simd] still has an experimental API and requires nightly,
+//! so it's very possible this code will not compile when you try to use it ¯\\_(ツ)\_/¯
 
 use std::simd::{u8x16, SimdPartialOrd};
 
@@ -33,23 +36,36 @@ fn to_hex_simd_1(window: u8x16) -> (u8x16, u8x16) {
     let nibble_size = u8x16::splat(4);
     let low_nibble_mask = u8x16::splat(0xF);
 
+    // Take a vector [█,█,█,█]
+    // and convert it to a vector of upper nibbles [▀,▀,▀,▀] and lower nibbles [▄,▄,▄,▄].
     let high_nibbles = window >> nibble_size;
     let low_nibbles = window & low_nibble_mask;
 
+    // Convert the upper and lower nibbles to ASCII separately:
+    // to_hex_digit([▀,▀,▀,▀]) -> [C,F,B,B]
+    // to_hex_digit([▄,▄,▄,▄]) -> [A,E,A,E]
     let high_nibbles = to_hex_digit(high_nibbles);
     let low_nibbles = to_hex_digit(low_nibbles);
 
+    // Put the vectors back into the right order:
+    // [C,F,B,B], [A,E,A,E] -> [C,A,F,E], [B,A,B,E]
     high_nibbles.interleave(low_nibbles)
 }
 
+/// Takes a vector of nibbles (4 bits) and arithmetically converts them to an ASCII representation.
 #[inline]
 fn to_hex_digit(nibbles: u8x16) -> u8x16 {
-    let alpha_base = u8x16::splat(b'A' - 10);
-    let digit_base = u8x16::splat(b'0');
+    // We'll add these to the nibble to get the ASCII character we want.
+    // We have to subtract 10 from 'A' because all nibbles that use alphabetic characters are
+    // already 10 or greater.
+    let letter_offset = u8x16::splat(b'A' - 10);
+    let digit_offset = u8x16::splat(b'0');
     let ten = u8x16::splat(10);
 
-    let use_alpha = nibbles.simd_ge(ten);
-    let base = use_alpha.select(alpha_base, digit_base);
+    // Is nibble > 10?
+    let needs_a_letter = nibbles.simd_ge(ten);
+    // If so, use a letter, otherwise use digits:
+    let base = needs_a_letter.select(letter_offset, digit_offset);
 
     base + nibbles
 }

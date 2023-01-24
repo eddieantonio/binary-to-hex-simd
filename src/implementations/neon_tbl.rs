@@ -1,4 +1,4 @@
-//! Implementation for AArch64 NEON using the tbl.16b instruction.
+//! Uses NEON's `tbl.16b` instruction to lookup 16 ASCII digits at a time.
 
 use std::arch::asm;
 
@@ -9,7 +9,8 @@ pub fn to_ascii_hex(input: &[u8]) -> String {
     let output_size = input.len() * 2;
     let mut buffer = Vec::<u8>::with_capacity(output_size);
 
-    // Convert the first (up to) 15 bytes, byte-by-byte:
+    // Since the SIMD portion can only do multiples of 16, we need to convert the first (up to) 15
+    // bytes one a time:
     let n_initial_bytes = convert_initial_prefix_byte_by_byte::<MOUTHFUL>(input, &mut buffer);
 
     // Prepare the pointers for usage with _convert_fast():
@@ -24,6 +25,7 @@ pub fn to_ascii_hex(input: &[u8]) -> String {
     }
 }
 
+/// Use's AArch64 NEON's `tbl.16b` to convert 16 nibbles to ASCII digits at a time.
 #[inline]
 unsafe fn _convert_fast(remaining_input: &[u8], buffer: *mut u8) {
     // ASCII lookup table used by tbl.16b:
@@ -43,30 +45,44 @@ unsafe fn _convert_fast(remaining_input: &[u8], buffer: *mut u8) {
 
     // Uh oh!
     asm!(
-        // Load required constants:
+        // Initialization: load required constants:
+        //
+        //  v7 ← b"0123456789ABCDEF" -- the lookup table
+        //  v6 ← [0xF; 16]           -- mask to extract the lower nibble
         "ldr        q7, [{3}]",
         "movi.16b   v6, #15",
 
-        // Load 16 bytes from the input and increment pointer:
+        // Load 16 bytes from the input and increment input pointer:
+        //
+        //  v0 ← [█,▉,▉,▉]
         "2:",
         "ldp        q0, q1, [{0}], #16",
 
-        // Split into high and low nibbles:
+        // Split the input into vectors for the high and low nibbles:
+        //
+        //  v2 ← [▀,▀,▀,▀]
+        //  v3 ← [▄,▄,▄,▄]
         "ushr.16b   v2, v0, #4",
         "and.16b    v3, v0, v6",
 
-        // Interleave:
+        // Interleave -- get the vectors back into order after we split in two:
+        //
+        //  v4 ← [▀,▄,▀,▄]
+        //  v5 ← [▀,▄,▀,▄]
         "zip1.16b   v4, v2, v3",
         "zip2.16b   v5, v2, v3",
 
         // Lookup ASCII:
+        //
+        //  v4 ← [C,A,F,E] (from previous v4, [▀,▄,▀,▄])
+        //  v5 ← [B,A,B,E] (from previous v5, [▀,▄,▀,▄])
         "tbl.16b    v4, {{ v7 }}, v4",
         "tbl.16b    v5, {{ v7 }}, v5",
 
-        // Store 32 bytes of output
+        // Store 32 bytes of output:
         "stp        q4, q5, [{1}], #32",
 
-        // Loop.
+        // Repeat for next 16 bytes of input:
         "subs       {2}, {2}, #16",
         "b.ne       2b",
 

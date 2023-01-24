@@ -1,3 +1,17 @@
+//! A fast binary to hexadecimal converter.
+//!
+//! The implementation takes advantage of SIMD to convert binary to hexadecimal... probably faster
+//! than you'll ever want it!
+//!
+//! # Examples
+//!
+//! Basic usage:
+//!
+//! ```
+//! let input = b"\xca\xfe\xba\xbe";
+//! let output = hx::to_ascii_hex(input);
+//! assert_eq!(&"CAFEBABE", &output);
+//! ```
 #![feature(portable_simd)]
 #![feature(test)]
 
@@ -6,6 +20,31 @@
 extern crate lazy_static;
 
 extern crate test;
+
+/// Returns the ASCII hexadecimal representation of `bytes`.
+///
+/// Guarentees about the output:
+///
+///  * The alphabetic letters will be in UPPERCASE.
+///  * The returned string will be exactly twice the length of `bytes`.
+///
+/// # Examples
+///
+/// Basic usage:
+///
+/// ```
+/// use hx::to_ascii_hex;
+///
+/// let bytes = b"\xf0\x9f\x92\xa9";
+/// assert_eq!("F09F92A9", &to_ascii_hex(&bytes[..]));
+/// ```
+pub fn to_ascii_hex(bytes: &[u8]) -> String {
+    if cfg!(target_feature = "neon") {
+        implementations::neon_tbl::to_ascii_hex(bytes)
+    } else {
+        implementations::portable_simd::to_ascii_hex(bytes)
+    }
+}
 
 pub mod implementations;
 
