@@ -1,12 +1,17 @@
 #![feature(portable_simd)]
 #![feature(test)]
 
+#[cfg(test)]
+#[macro_use]
+extern crate lazy_static;
+
 extern crate test;
 
 pub mod implementations;
 
 #[cfg(test)]
 mod tests {
+
     #[test]
     fn basic_case() {
         use crate::implementations::*;
@@ -21,16 +26,40 @@ mod tests {
     }
 
     mod benchmark {
-        use std::fs;
         use test::{black_box, Bencher};
 
+        /// How much test data should be used in the benchmark:
+        const TEST_DATA_SIZE: usize = 12 * MEGABYTES;
+        const MEGABYTES: usize = 1024 * 1024;
+
+        // Generate the shared test data on demand.
+        lazy_static! {
+            /// Test data shared by all benchmarks.
+            /// Just random bytes.
+            static ref TEST_DATA: Vec<u8> = {
+                let mut test_data = Vec::with_capacity(TEST_DATA_SIZE);
+                // Create test data 16 bytes at a time. Gotta go fast!
+                let bytes_per_u128 = 128 / 8;
+                let u128s_needed = TEST_DATA_SIZE / bytes_per_u128;
+
+                for _ in 0..u128s_needed {
+                    let random_bytes = fastrand::u128(..).to_ne_bytes();
+                    test_data.extend(random_bytes);
+                }
+                assert_eq!(TEST_DATA_SIZE, test_data.len());
+
+                test_data
+            };
+        }
+
+        // Generic implementation to benchmark an implementation.
         macro_rules! benchmark {
             ($name: ident) => {
                 #[bench]
                 fn $name(b: &mut Bencher) {
                     use crate::implementations::$name::to_ascii_hex;
-                    let input = fs::read("./test.bin").unwrap();
-                    b.iter(|| black_box(to_ascii_hex(&input)));
+                    let data = &TEST_DATA;
+                    b.iter(|| black_box(to_ascii_hex(data)));
                 }
             };
         }
