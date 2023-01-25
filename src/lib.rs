@@ -21,9 +21,11 @@ extern crate lazy_static;
 
 extern crate test;
 
+pub mod implementations;
+
 /// Returns the ASCII hexadecimal representation of `bytes`.
 ///
-/// Guarentees about the output:
+/// Guarantees about the output:
 ///
 ///  * The alphabetic letters will be in UPPERCASE.
 ///  * The returned string will be exactly twice the length of `bytes`.
@@ -46,11 +48,8 @@ pub fn to_ascii_hex(bytes: &[u8]) -> String {
     }
 }
 
-pub mod implementations;
-
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn basic_case() {
         use crate::implementations::*;
@@ -71,7 +70,7 @@ mod tests {
         const TEST_DATA_SIZE: usize = 12 * MEGABYTES;
         const MEGABYTES: usize = 1024 * 1024;
 
-        // Generate the shared test data on demand.
+        // Generate the shared test data on demand on first use.
         lazy_static! {
             /// Test data shared by all benchmarks.
             /// Just random bytes.
@@ -91,7 +90,7 @@ mod tests {
             };
         }
 
-        // Generic implementation to benchmark an implementation.
+        // Benchmark the given implementation name with the test data.
         macro_rules! benchmark {
             ($name: ident) => {
                 #[bench]

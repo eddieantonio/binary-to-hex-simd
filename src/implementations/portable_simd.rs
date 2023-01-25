@@ -9,17 +9,19 @@ pub fn to_ascii_hex(input: &[u8]) -> String {
     let mut buffer = Vec::with_capacity(input.len() * 2);
     let (low, middle, high) = input.as_simd();
 
+    // Slowly convert prefix of unaligned memory:
     let low = super::byte_by_byte::_byte_by_byte(low);
     buffer.extend(low);
 
-    for window in middle {
-        let (result_one, result_two) = to_hex_simd_1(*window);
-        let bytes_one = result_one.to_array();
-        let bytes_two = result_two.to_array();
-        buffer.extend(&bytes_one);
-        buffer.extend(&bytes_two);
+    // Quickly convert the juicy, SIMD-aligned middle part, 16 bytes at a time:
+    for window in middle.iter().copied() {
+        let (first, last) = to_hex_simd_1(window);
+        let (first_bytes, last_bytes) = (first.to_array(), last.to_array());
+        buffer.extend(&first_bytes);
+        buffer.extend(&last_bytes);
     }
 
+    // Slowly convert suffix of unaligned memory:
     let high = super::byte_by_byte::_byte_by_byte(high);
     buffer.extend(&high);
 
@@ -64,8 +66,8 @@ fn to_hex_digit(nibbles: u8x16) -> u8x16 {
 
     // Is nibble > 10?
     let needs_a_letter = nibbles.simd_ge(ten);
-    // If so, use a letter, otherwise use digits:
-    let base = needs_a_letter.select(letter_offset, digit_offset);
+    // If so, use a letter, else use digits:
+    let offset = needs_a_letter.select(letter_offset, digit_offset);
 
-    base + nibbles
+    offset + nibbles
 }

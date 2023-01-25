@@ -26,14 +26,23 @@ pub fn to_ascii_hex(input: &[u8]) -> String {
 }
 
 /// Use's AArch64 NEON's `tbl.16b` to convert 16 nibbles to ASCII digits at a time.
+///
+/// # Panics
+///
+/// `remaining_input.len()` must be a multiple of 16, otherwise this function panics.
+///
+/// # Safety
+///
+/// `buffer` must point to memory with at least `remaining_input.len() * 2` bytes that can be
+/// overwritten, otherwise undefined behaviour is invoked.
 #[inline]
 unsafe fn _convert_fast(remaining_input: &[u8], buffer: *mut u8) {
     // ASCII lookup table used by tbl.16b:
     const LOOKUP: [u8; 16] = *b"0123456789ABCDEF";
 
     if remaining_input.is_empty() {
-        // The assembly below assumes there is at least one loop iteration to do, or else it will
-        // crash.
+        // The assembly below assumes there is at least one loop iteration to do,
+        // or else it will crash.
         return;
     }
 
